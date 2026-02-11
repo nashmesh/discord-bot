@@ -1,8 +1,9 @@
-import { ChatInputCommandInteraction, CacheType, MessageFlags, EmbedAuthorOptions } from "discord.js";
+import { ChatInputCommandInteraction, CacheType, MessageFlags, EmbedAuthorOptions, RestOrArray, APIEmbedField } from "discord.js";
 import { nodeHex2id} from "../NodeUtils";
 import Command from "./Command";
 import meshDB from "MeshDB";
 import { Pagination } from "pagination.djs";
+import config from "Config";
 
 export default class NodesCommand extends Command {
 
@@ -17,7 +18,7 @@ export default class NodesCommand extends Command {
             userArg = interaction.user;
         }
 
-        await meshDB.client.node.findMany({
+        meshDB.client.node.findMany({
             where: {
                 discordId: userArg.id
             }
@@ -30,20 +31,21 @@ export default class NodesCommand extends Command {
                 return;
             }
 
-            const fields = [];
+            const mallaUrl = config.getMallaURL(interaction.guildId);
+            const fields = [] as APIEmbedField[];
             nodes.forEach(node => {
                 fields.push({
                     name: `[!${node.hexId}] ${node.longName ?? 'Unknown'}`,
-                    value: `[View on Malla](https://malla.tnmesh.org/node/${nodeHex2id(node.hexId)})`
+                    value: `[View on Malla](https://${mallaUrl}/node/${nodeHex2id(node.hexId)})`
                 })
             });
 
-            const pagination = new Pagination(interaction);
             const authorOptions: EmbedAuthorOptions = {
                 name: userArg.displayName,
                 iconURL: userArg.displayAvatarURL().toString()
             };
 
+            const pagination = new Pagination(interaction);
             pagination.setFields(fields);
             pagination.setTitle('Linked Nodes')
             pagination.setAuthor(authorOptions)

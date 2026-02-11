@@ -5,6 +5,7 @@ import meshDB from "../MeshDB";
 import logger from "../Logger";
 import { validateNodeId } from "../NodeUtils";
 import { Node } from "generated/prisma/client";
+import config from "Config";
 
 export default class WhoisCommand extends Command {
 
@@ -48,9 +49,10 @@ export default class WhoisCommand extends Command {
             );
         }
 
+        const mallaUrl = config.getMallaURL(interaction.guildId);
         const embed = (new EmbedBuilder())
             .setTitle(`${node.hex_id} (${node.long_name}) ${node.short_name}`)
-            .setURL(`https://malla.tnmesh.org/node/${node.node_id}`)
+            .setURL(`https://${mallaUrl}/node/${node.node_id}`)
             .addFields(fields)
             .setTimestamp(node.last_packet_time * 1000)
             .setColor(0x0099ff)

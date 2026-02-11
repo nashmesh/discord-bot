@@ -41,9 +41,6 @@ logger.info("Starting Mesh Logger");
 const DISCORD_CLIENT_ID = process.env["DISCORD_CLIENT_ID"];
 const DISCORD_TOKEN = process.env["DISCORD_TOKEN"];
 const DISCORD_GUILD = process.env["DISCORD_GUILD"];
-const DISCORD_CHANNEL_LF = process.env["DISCORD_CHANNEL_LF"];
-const DISCORD_CHANNEL_MS = process.env["DISCORD_CHANNEL_MS"];
-const DISCORD_CHANNEL_HAB = process.env["DISCORD_CHANNEL_HAB"];
 const REDIS_URL = process.env["REDIS_URL"];
 const NODE_INFO_UPDATES = process.env["NODE_INFO_UPDATES"] === "1";
 const MQTT_BROKER_URL = process.env["MQTT_BROKER_URL"];
@@ -127,10 +124,6 @@ client.once("ready", () => {
   } else {
     logger.info(JSON.stringify(guild));
   }
-
-  const lfChannel = fetchDiscordChannel(guild, DISCORD_CHANNEL_LF);
-  const msChannel = fetchDiscordChannel(guild, DISCORD_CHANNEL_MS);
-  const habChannel = fetchDiscordChannel(guild, DISCORD_CHANNEL_HAB);
 
   // Connect to the MQTT broker.
   const mqttClient = mqtt.connect(MQTT_BROKER_URL, {
@@ -232,7 +225,7 @@ client.once("ready", () => {
             packetGroup.serviceEnvelopes[0].packet.decoded.payload.toString(),
         );
       }
-      processTextMessage(packetGroup, client, guild, discordMessageIdCache, habChannel, msChannel, lfChannel);
+      processTextMessage(packetGroup, client, guild, discordMessageIdCache);
     });
   }, 5000);
 

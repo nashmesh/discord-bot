@@ -8,9 +8,11 @@ import meshDB from "MeshDB";
 import { Flag, Node } from "generated/prisma/client";
 import { FlagRepository } from "@repositories/FlagRepository";
 import { FlagProperties, Flags } from "Flags";
+import config from "Config";
 
 export const createDiscordMessage = async (packetGroup: PacketGroup, text: string, balloonNode: boolean, client: Client, guild: Guild, channelId: string) => {
   try {
+    const mallaUrl = config.getMallaURL(guild.id);
     const packet = packetGroup.serviceEnvelopes[0].packet;
     const from = nodeId2hex(packet.from);
     const nodeIdHex = nodeId2hex(from);
@@ -117,7 +119,7 @@ export const createDiscordMessage = async (packetGroup: PacketGroup, text: strin
 
     infoFields.push({
       name: "Packet",
-      value: `[${packetGroup.id.toString(16)}](https://malla.tnmesh.org/mesh-packet/${packetGroup.id})`,
+      value: `[${packetGroup.id.toString(16)}](https://${mallaUrl}/mesh-packet/${packetGroup.id})`,
       inline: true,
     });
 
@@ -196,7 +198,7 @@ export const createDiscordMessage = async (packetGroup: PacketGroup, text: strin
 
         const gatewayFieldText =
           `[${gatewayDisplayName} ${hopText}` +
-          `](https://malla.tnmesh.org/node/${nodeHex2id(envelope.gatewayId.replace("!", ""))})`;
+          `](https://${mallaUrl}/node/${nodeHex2id(envelope.gatewayId.replace("!", ""))})`;
 
         if (!gatewayGroups[hopGroup]) {
           gatewayGroups[hopGroup] = [];
@@ -260,13 +262,13 @@ export const createDiscordMessage = async (packetGroup: PacketGroup, text: strin
         "https://cdn.discordapp.com/app-icons/1240017058046152845/295e77bec5f9a44f7311cf8723e9c332.png",
       embeds: [
         {
-          url: `https://malla.tnmesh.org/node/${packet.from}`,
+          url: `https://${mallaUrl}/node/${packet.from}`,
           color: 6810260,
           timestamp: new Date(packet.rxTime * 1000).toISOString(),
 
           author: {
             name: `${nodeInfos[nodeIdHex] ? nodeInfos[nodeIdHex].longName : "Unknown"}`,
-            url: `https://malla.tnmesh.org/node/${packet.from}`,
+            url: `https://${mallaUrl}/node/${packet.from}`,
             icon_url: avatarUrl,
           },
           title: `${nodeInfos[nodeIdHex] ? nodeInfos[nodeIdHex].shortName : "UNK"}`,
