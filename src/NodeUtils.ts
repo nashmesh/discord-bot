@@ -1,3 +1,4 @@
+import config from "Config";
 import { CacheType, ChatInputCommandInteraction } from "discord.js";
 
 const nodeId2hex = (nodeId: string | number) => {
@@ -32,8 +33,10 @@ const validateNodeId = (nodeId: string): string | null => {
 };
 
 const fetchNodeId = (interaction: ChatInputCommandInteraction<CacheType>): string | null => {
+  const mallaUrl = config.getMallaURL(interaction.guildId);
+
   let nodeId = interaction.options
-    .getString("nodeid")?.replace("https://malla.tnmesh.org/node/", "")
+    .getString("nodeid")?.replace(`https://${mallaUrl}/node/`, "")
     .replace("!", "")
     .trim();
 

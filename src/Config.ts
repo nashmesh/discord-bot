@@ -37,6 +37,8 @@ interface GuildConfigInterface {
     channelMediumSlow: string;
     channelHighAltitudeBalloon: string;
     topics: string[];
+    malla: string;
+    channels: string[];
 }
 
 class Config {
@@ -48,7 +50,7 @@ class Config {
             this.content = JSON.parse(fileContent) as ConfigInterface;
 
             // this.validateConfiguration();
-            logger.info(`Version: ${config.content.version}`);
+            logger.info(`Version: ${this.content.version}`);
             logger.info(`Environment: ${this.content.environment}`);
         } catch (error: any) {
             logger.error(error)
@@ -63,6 +65,24 @@ class Config {
         if (this.content.discord.guilds.length === 0) {
             throw new Error('No configured guilds. Exiting');
         }
+    }
+
+    public getMallaURL(guildId: string | null) {
+        if (this.content === undefined || guildId === null) {
+            return 'malla.tnmesh.org';
+        }
+
+        return this.content.discord.guilds[guildId].malla;
+    }
+
+    public getDiscordChannel(guildId: string, channelName: string) {
+        const channelId = this.content?.discord.guilds[guildId].channels[channelName];
+
+        if (channelId === undefined) {
+            return this.content?.discord.guilds[guildId].channels['default'];
+        }
+
+        return channelId;
     }
 }
 

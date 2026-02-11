@@ -2,6 +2,7 @@ import { EmbedBuilder, Guild, Message, TextChannel, User, userMention } from "di
 import CommandMessage from "./CommandMessage";
 import { NodeSearchNodeResponse, searchNode } from "../../api/malla/Nodes";
 import meshRedis from "../../MeshRedis";
+import config from "Config";
 
 
 export default class WhoisMessageCommand extends CommandMessage {
@@ -43,7 +44,6 @@ export default class WhoisMessageCommand extends CommandMessage {
         }
 
         let node: NodeSearchNodeResponse = response.nodes[0];
-
         let nodeOwner: string | null  = await meshRedis.getDiscordUserId(node.hex_id);
         let fields = [
                 { name: 'Primary Channel',  value: node.primary_channel, inline: true },
@@ -62,9 +62,10 @@ export default class WhoisMessageCommand extends CommandMessage {
             );
         }
 
+        const mallaUrl = config.getMallaURL(guild.id);
         let embed = (new EmbedBuilder())
             .setTitle(`${node.hex_id} (${node.long_name}) ${node.short_name}`)
-            .setURL(`https://malla.tnmesh.org/node/${node.node_id}`)
+            .setURL(`https://${mallaUrl}/node/${node.node_id}`)
             .addFields(fields)
             .setTimestamp(node.last_packet_time * 1000)
             .setColor(0x0099ff)

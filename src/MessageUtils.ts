@@ -5,8 +5,9 @@ import logger from "./Logger";
 import { PacketGroup } from "./MeshPacketCache";
 import { Client, Guild } from "discord.js";
 import config from "Config";
+import { fetchDiscordChannel } from "DiscordUtils";
 
-const processTextMessage = async (packetGroup: PacketGroup, client: Client, guild: Guild, discordMessageIdCache, habChannel, msChannel, lfChannel) => {
+const processTextMessage = async (packetGroup: PacketGroup, client: Client, guild: Guild, discordMessageIdCache) => {
   const packet = packetGroup.serviceEnvelopes[0].packet;
   const packetTopic = packetGroup.serviceEnvelopes[0].topic;
   let text = packet.decoded.payload.toString();
@@ -29,10 +30,7 @@ const processTextMessage = async (packetGroup: PacketGroup, client: Client, guil
     return;
   }
 
-  const topicsForGuild: [] = config.content.discord.guilds[guild.id].topics ?? null;
-  logger.info(topicsForGuild);
-  logger.info(packetTopic);
-
+  const topicsForGuild: [] = config.content?.discord.guilds[guild.id].topics ?? null;
   if (topicsForGuild === null) {
     logger.info('no topics for guild')
     return;
@@ -48,9 +46,6 @@ const processTextMessage = async (packetGroup: PacketGroup, client: Client, guil
     return;
   }
 
-  logger.debug("createDiscordMessage: " + text);
-  logger.debug("reply_id: " + packet.decoded.replyId?.toString());
-
   const nodeId = nodeId2hex(packet.from);
 
   // Check if the node is banned
@@ -61,34 +56,11 @@ const processTextMessage = async (packetGroup: PacketGroup, client: Client, guil
   }
 
   const balloonNode = await meshRedis.isBalloonNode(nodeId);
-
-  const getDiscordChannel = async (balloonNode, channelId) => {
-    // temp: return long fast channel (current default) for all presets
-    return lfChannel;
-
-
-    if (balloonNode) {
-      return habChannel;
-    }
-    if (channelId === "MediumSlow") {
-      return msChannel;
-    } else if (channelId === "LongFast") {
-    } else if (channelId === "HAB") {
-      return habChannel;
-    } else {
-      return null;
-    }
-  };
-
   const channelId = packetGroup.serviceEnvelopes[0].channelId;
-
   const content = await createDiscordMessage(packetGroup, text, balloonNode, client, guild, channelId);
 
-  let discordChannel = await getDiscordChannel(
-    balloonNode,
-    channelId,
-  );
-
+  let discordChannel = fetchDiscordChannel(guild, config.getDiscordChannel(guild.id, channelId));
+  // let discordChannel = guild.channels.fetch(config.getDiscordChannel(guild.id, channelId));
   if (discordChannel === null) {
     logger.warn(
       "No discord channel found for channelId: " +

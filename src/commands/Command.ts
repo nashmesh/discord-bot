@@ -49,7 +49,7 @@ export default abstract class Command {
   };
 
   public async nodeBelongsToUser(nodeId: string, interaction: ChatInputCommandInteraction): Promise<boolean | null> {
-    const node: Node = await meshDB.client.node.findFirst({
+    const node: Node | null = await meshDB.client.node.findFirst({
       where: {
         hexId: nodeId
       }
@@ -72,7 +72,7 @@ export default abstract class Command {
   }
 
   protected async nodeHasOwner(nodeId: string): Promise<boolean> {
-    const node: Node = await meshDB.client.node.findFirst({
+    const node: Node | null = await meshDB.client.node.findFirst({
       where: {
         hexId: nodeId
       }

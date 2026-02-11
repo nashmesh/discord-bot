@@ -18,17 +18,16 @@ export default class MqttCommand extends CommandMessage {
         let channel: TextChannel = <TextChannel>message.channel;
 
         let embed = (new EmbedBuilder())
-            .setTitle('Current MQTT Details')
+            .setTitle('MQTT Details')
             .addFields(
-                { name: 'MQTT Host', value: 'mqtt.tnmesh.org', inline: true },
+                { name: 'MQTT Host', value: 'mqtt.nashme.sh', inline: true },
                 { name: 'MQTT Username', value: 'meshdev', inline: true },
                 { name: 'MQTT Password', value: 'large4cats', inline: true },
                 { name: '`Primary` Channel Uplink', value: 'enabled' },
                 { name: 'OK to MQTT', value: 'enabled' },
-                { name: 'West Topic', value: 'msh/US/TN/West', inline: true },
-                { name: 'Middle Topic', value: 'msh/US/TN/Middle', inline: true },
-                { name: 'East Topic', value: 'msh/US/TN/East', inline: true },
-            ).setFooter({ text: 'View @ tnmesh.org/mqtt'});
+                { name: 'Topic', value: 'msh/US/TN/Middle', inline: true },
+                { name: 'Read More', value: 'https://nashme.sh/mqtt', inline: true },
+            );
 
         await channel.send({ embeds: [embed] });
     }
