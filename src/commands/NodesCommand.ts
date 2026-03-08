@@ -4,11 +4,29 @@ import Command from "./Command";
 import meshDB from "MeshDB";
 import { Pagination } from "pagination.djs";
 import config from "Config";
+import { NodeError } from "errors/NodeError";
 
 export default class NodesCommand extends Command {
 
     constructor() {
         super("nodes");
+    }
+
+    public getHelpFields(): APIEmbedField[] {
+        return [
+            {
+                name: 'List nodes linked to yourself',
+                value: '`/nodes`'
+            },
+            {
+                name: 'List nodes linked to another user',
+                value: '`/nodes user`'
+            },
+            {
+                name: 'Example',
+                value: '`/nodes @M3shHe4d`'
+            },
+        ]
     }
 
     public async handle(interaction: ChatInputCommandInteraction<CacheType>): Promise<void> {
@@ -24,11 +42,7 @@ export default class NodesCommand extends Command {
             }
         }).then((nodes) => {
             if (nodes.length === 0) {
-                interaction.reply({
-                    content: "No nodes found for user",
-                    flags: MessageFlags.Ephemeral,
-                });
-                return;
+                throw new NodeError({name: 'USER_HAS_NO_NODES'});
             }
 
             const mallaUrl = config.getMallaURL(interaction.guildId);

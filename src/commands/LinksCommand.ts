@@ -14,7 +14,7 @@ export default class LinksCommand extends Command {
         const option = interaction.options.getString('option');
         const link = interaction.options.getString('link');
         const value = interaction.options.getString('value');
-        await this.handleOption(option, link, value, interaction);
+        // await this.handleOption(option, link, value, interaction);
     }
 
     private async handleOption(command: string, link: string, value: string, interaction: ChatInputCommandInteraction): Promise<void> {

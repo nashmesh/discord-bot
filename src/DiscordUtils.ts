@@ -13,9 +13,7 @@ export const fetchUserRoles = async (guild: Guild, userId: string): Promise<stri
 export const fetchDiscordChannel = (guild: Guild, channelId: string) => {
   const channel = guild.channels.cache.find((ch) => ch.id === channelId && ch.isTextBased());
   if (!channel) {
-    console.error(`Channel Id "${channelId}" not found`);
     return null;
   }
-  console.info(`Channel ${channel.name} found`);
   return channel;
 };

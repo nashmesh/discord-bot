@@ -1,7 +1,9 @@
-import { CacheType, ChatInputCommandInteraction, MessageFlags, userMention } from "discord.js";
-import { fetchNodeId as _fetchNodeId } from "../NodeUtils";
+import { APIEmbedField, CacheType, ChatInputCommandInteraction, MessageFlags, userMention } from "discord.js";
+import { fetchNodeId as _fetchNodeId, validateNodeId } from "../NodeUtils";
 import { Node } from "generated/prisma/client";
 import meshDB from "MeshDB";
+import { NodeError } from "errors/NodeError";
+import config from "Config";
 
 export default abstract class Command {
   protected name: string;
@@ -16,6 +18,15 @@ export default abstract class Command {
    * @param interaction
    */
   abstract handle(interaction: ChatInputCommandInteraction): Promise<void>;
+
+  /**
+   * The help
+   *
+   * @returns
+   */
+  public getHelpFields(): APIEmbedField[] {
+    return [];
+  }
 
   /**
    * Fetch an API call using a callback. If the API request fails, the interaction is replied back
@@ -45,43 +56,68 @@ export default abstract class Command {
   }
 
   public fetchNodeId(interaction: ChatInputCommandInteraction<CacheType>): string | null {
-    return _fetchNodeId(interaction);
-  };
+    const mallaUrl = config.getMallaURL(interaction.guildId);
 
-  public async nodeBelongsToUser(nodeId: string, interaction: ChatInputCommandInteraction): Promise<boolean | null> {
-    const node: Node | null = await meshDB.client.node.findFirst({
-      where: {
-        hexId: nodeId
-      }
-    })
+    let nodeId: string | null | undefined = interaction.options
+      .getString("nodeid")?.replace(`https://${mallaUrl}/node/`, "")
+      .replace("!", "")
+      .trim();
 
-    // node is not in DB
-    if (!node) {
+    if (nodeId === undefined) {
       return null;
     }
 
-    if (node.discordId !== interaction.user.id) {
-      await interaction.reply({
-        content: `Node not found linked to ${userMention(interaction.user.id)}`,
-        flags: MessageFlags.Ephemeral,
-      });
-      return false;
+    nodeId = validateNodeId(nodeId);
+    if (nodeId === null) {
+      return null
     }
 
-    return true
+    return nodeId;
+  };
+
+  /**
+   * Does a node belong to a user?
+   *
+   * @param node
+   * @param interaction
+   * @returns
+   */
+  public nodeBelongsToUser(node: Node, interaction: ChatInputCommandInteraction): boolean {
+    return node.discordId === interaction.user.id;
   }
 
-  protected async nodeHasOwner(nodeId: string): Promise<boolean> {
-    const node: Node | null = await meshDB.client.node.findFirst({
+  /**
+   * Does a node have an owner?
+   *
+   * @param node
+   * @returns
+   */
+  public nodeHasOwner(node: Node): boolean {
+    return node.discordId !== null;
+  }
+
+  /**
+   * Does the node exist in the DB?
+   *
+   * @param nodeId
+   * @returns
+   */
+  protected async nodeExists(nodeId: string): Promise<boolean>
+  {
+    return await this.getNode(nodeId) !== null;
+  }
+
+  /**
+   * Get a node from the DB
+   *
+   * @param nodeId
+   * @returns
+   */
+  protected async getNode(nodeId: string): Promise<Node | null> {
+    return await meshDB.client.node.findFirst({
       where: {
         hexId: nodeId
       }
     });
-
-    if (!node) {
-      return false;
-    }
-
-    return node.discordId !== null;
   }
 }
