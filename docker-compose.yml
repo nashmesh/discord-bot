@@ -8,20 +8,21 @@ services:
     volumes:
       - .:/app
     environment:
-      - DISCORD_TOKEN=${DISCORD_TOKEN}
-      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
-      - DISCORD_GUILD=${DISCORD_GUILD}
-      - DISCORD_CHANNEL_LF=${DISCORD_CHANNEL_LF}
-      - DISCORD_CHANNEL_MS=${DISCORD_CHANNEL_MS}
-      - DISCORD_CHANNEL_HAB=${DISCORD_CHANNEL_HAB}
-      - MQTT_BROKER_URL=${MQTT_BROKER_URL}
-      - MQTT_TOPICS=${MQTT_TOPICS}
       - REDIS_URL=${REDIS_URL}
       - ENVIRONMENT=${ENVIRONMENT}
-      - NODE_INFO_UPDATES=${NODE_INFO_UPDATES}
       - DATABASE_URL=${DATABASE_URL}
     networks:
       - web
+    develop:
+      watch:
+        - path: ./package.json
+          action: rebuild
+        - path: ./src
+          target: /app/src
+          action: sync
+        - path: ./tsconfig.json
+          target: /app/tsconfig.json
+          action: sync
 networks:
   web:
     external: true
