@@ -1,8 +1,10 @@
-import { ChatInputCommandInteraction, CacheType, MessageFlags, userMention } from "discord.js";
+import { ChatInputCommandInteraction, CacheType, MessageFlags, userMention, APIEmbedField, EmbedBuilder } from "discord.js";
 import Command from "./Command";
 import logger from "../Logger";
-import { fetchNodeId } from "../NodeUtils";
 import meshDB from "../MeshDB";
+import { NodeError } from "errors/NodeError";
+import { Node } from "generated/prisma/client";
+import { nodeHex2id } from "NodeUtils";
 
 export default class LinkNodeCommand extends Command {
 
@@ -10,26 +12,38 @@ export default class LinkNodeCommand extends Command {
         super("linknode");
     }
 
-    public async handle(interaction: ChatInputCommandInteraction<CacheType>): Promise<void> {
-        let nodeId = fetchNodeId(interaction);
+    public getHelpFields(): APIEmbedField[] {
+        return [
+            {
+                name: 'Linking a node',
+                value: '`/linknode nodeid`'
+            },
+                        {
+                name: 'Example',
+                value: '`/linknode 677d3afe`'
+            },
+        ];
+    }
 
-        if (!nodeId) {
-            logger.warn("Received /linknode command with no nodeid");
-            await interaction.reply({
-                content: "Please provide a nodeid",
-                ephemeral: true,
-            });
-            return;
+    public async handle(interaction: ChatInputCommandInteraction<CacheType>): Promise<void> {
+        const nodeId = this.fetchNodeId(interaction);
+        if (nodeId === null) {
+            throw new NodeError({name: 'INVALID_NODE_PROVIDED'});
         }
 
-        const nodeHasOwner: boolean = await this.nodeHasOwner(nodeId);
+        const node: Node | null = await this.getNode(nodeId);
+        if (node === null) {
+            throw new NodeError({name: 'NODE_NOT_FOUND'});
+        }
 
-        if (nodeHasOwner === true) {
-            await interaction.reply({
-                content: "This node is already linked to an account",
-                flags: MessageFlags.Ephemeral,
-            });
-            return;
+        if (this.nodeHasOwner(node) === true) {
+            if (this.nodeBelongsToUser(node, interaction) === true) {
+                throw new NodeError({
+                    name: 'NODE_IS_ALREADY_LINKED_TO_USER'
+                });
+            }
+
+            throw new NodeError({name: 'NODE_IS_ALREADY_LINKED'});
         }
 
         await meshDB.client.node.upsert({
@@ -45,9 +59,40 @@ export default class LinkNodeCommand extends Command {
             where: {
                 hexId: nodeId
             }
-        }).then(() => {
+        }).then((node: Node) => {
+            const embed = new EmbedBuilder()
+                .setTitle(`${node.longName ?? node.hexId} has been successfully linked!`)
+                    .setAuthor({
+                        name: interaction.user.displayName,
+                        iconURL: interaction.user.avatarURL() ?? '',
+                    })
+                .addFields(
+                    {
+                        name: "Malla",
+                        value: `Check out metrics and more for your node on our [Malla](https://malla.nashme.sh/node/${nodeHex2id(node.hexId)}).`,
+                        inline: true
+                    },
+                    {
+                        name: "Potato",
+                        value: `Check to see if your node has been seen on our [Potato map](https://potato.nashme.sh/nodes/!${node.hexId}).`,
+                        inline: true
+                    },
+                    {
+                        name: "Flags",
+                        value: 'Check out `/help flags` to set flags for your node.',
+                        inline: true
+                    },
+                )
+                .setColor("#fefdf5")
+                .setFooter({
+                    text: "NashMesh",
+                    iconURL: "https://nashme.sh/static/images/logo.png",
+                })
+                .setTimestamp();
+
+
             interaction.reply({
-                content: `Node linked to ${userMention(interaction.user.id)}`,
+                embeds: [embed],
                 flags: MessageFlags.Ephemeral,
             });
         });

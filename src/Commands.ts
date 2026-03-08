@@ -2,12 +2,6 @@ import { ApplicationCommandOptionType } from "discord.js";
 import LinkNodeCommand from "./commands/LinkNodeCommand";
 import Command from "./commands/Command"
 import UnlinkNodeCommand from "./commands/UnlinkNodeCommand";
-import AddTrackerCommand from "./commands/AddTrackerCommand";
-import RemoveTrackerCommand from "./commands/RemoveTrackerCommand";
-import AddBalloonCommand from "./commands/AddBalloonCommand";
-import RemoveBalloonCoomand from "./commands/RemoveBalloonCommand";
-import BanNodeCommand from "./commands/BanNodeCommand";
-import UnbanNodeCommand from "./commands/UnbanNodeCommand";
 import NodesCommand from "./commands/NodesCommand";
 import CommandMessage from "./commands/message/CommandMessage";
 import MqttCommand from "./commands/message/MqttCommand";
@@ -69,7 +63,7 @@ export const commands: CommandType[] = [
       {
         name: "nodeid",
         type: ApplicationCommandOptionType.String,
-        description: "The hex or integer node ID to link",
+        description: "Node ID must be hex-formatted. ex: `677d3afe`",
         required: true,
       },
     ],
@@ -82,85 +76,7 @@ export const commands: CommandType[] = [
       {
         name: "nodeid",
         type: ApplicationCommandOptionType.String,
-        description: "The node hex ID to unlink",
-        required: true,
-      },
-    ],
-  },
-  {
-    name: "addtracker",
-    description: "Start position updates from node in discord",
-    class: new AddTrackerCommand,
-    options: [
-      {
-        name: "nodeid",
-        type: ApplicationCommandOptionType.String,
-        description: "The hex or integer node ID to start tracking",
-        required: true,
-      },
-    ],
-  },
-  {
-    name: "removetracker",
-    description: "Stop position updates from node in discord",
-    class: new RemoveTrackerCommand,
-    options: [
-      {
-        name: "nodeid",
-        type: ApplicationCommandOptionType.String,
-        description: "The hex or integer node ID to stop tracking",
-        required: true,
-      },
-    ],
-  },
-  {
-    name: "addballoon",
-    description: "Start position updates from node in discord",
-    class: new AddBalloonCommand,
-    options: [
-      {
-        name: "nodeid",
-        type: ApplicationCommandOptionType.String,
-        description: "The hex or integer node ID to start tracking",
-        required: true,
-      },
-    ],
-  },
-  {
-    name: "removeballoon",
-    description: "Stop position updates from node in discord",
-    class: new RemoveBalloonCoomand,
-    options: [
-      {
-        name: "nodeid",
-        type: ApplicationCommandOptionType.String,
-        description: "The hex or integer node ID to stop tracking",
-        required: true,
-      },
-    ],
-  },
-  {
-    name: "bannode",
-    description: "Ban a node from logger",
-    class: new BanNodeCommand,
-    options: [
-      {
-        name: "nodeid",
-        type: ApplicationCommandOptionType.String,
-        description: "The node ID to ban",
-        required: true,
-      },
-    ],
-  },
-  {
-    name: "unbannode",
-    description: "Unban a node from logger",
-    class: new UnbanNodeCommand,
-    options: [
-      {
-        name: "nodeid",
-        type: ApplicationCommandOptionType.String,
-        description: "The node ID to unban",
+        description: "Node ID must be hex-formatted. ex: `677d3afe`",
         required: true,
       },
     ],
@@ -216,13 +132,17 @@ export const commands: CommandType[] = [
             name: 'get',
             value: 'get'
           },
+          {
+            name: 'list',
+            value: 'list'
+          },
         ],
       },
       {
         name: "key",
         type: ApplicationCommandOptionType.String,
         description: "The flag key to manage",
-        required: true,
+        required: false,
         choices: Flags.getFlags().map((properties) => {
           return {
             name: properties.key,
@@ -239,3 +159,14 @@ export const commands: CommandType[] = [
     ],
   }
 ];
+
+export function findClassForCommand(name: string): Command | null
+{
+    for (let command of commands) {
+        if (command.name == name) {
+            return command.class;
+        }
+    }
+
+    return null;
+}

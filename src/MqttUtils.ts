@@ -6,8 +6,9 @@ import { nodeId2hex } from "./NodeUtils";
 import logger from "./Logger";
 import { Message } from "protobufjs";
 import meshDB from "MeshDB";
+import config from "Config";
 
-const handleMqttMessage = async (topic, message, MQTT_TOPICS, meshPacketCache, NODE_INFO_UPDATES, MQTT_BROKER_URL) => {
+const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDATES) => {
   try {
     if (topic.includes("msh")) {
       if (!topic.includes("/json")) {
@@ -31,11 +32,12 @@ const handleMqttMessage = async (topic, message, MQTT_TOPICS, meshPacketCache, N
           return;
         }
         if (!envelope || !envelope.packet) {
+          logger.error("[handleMqttCommand] Invalid service envelope decoded");
           return;
         }
 
         if (
-          MQTT_TOPICS.some((t) => {
+          ["msh/US"].some((t) => {
             return topic.startsWith(t);
           }) ||
           meshPacketCache.exists(envelope.packet.id)
@@ -50,7 +52,6 @@ const handleMqttMessage = async (topic, message, MQTT_TOPICS, meshPacketCache, N
 
           const portnum = envelope.packet?.decoded?.portnum;
           const from = envelope.packet.from.toString(16);
-          logger.info(`from: ${from}`);
 
           const exists = await meshDB.client.node.findFirst({
             where: {
@@ -67,10 +68,9 @@ const handleMqttMessage = async (topic, message, MQTT_TOPICS, meshPacketCache, N
           }
 
           if (portnum === 1) {
-            meshPacketCache.add(envelope, topic, MQTT_BROKER_URL);
+            meshPacketCache.add(envelope, topic, config.content.mqtt.host);
           } else if (portnum === 3) {
             // const from = envelope.packet.from.toString(16);
-            logger.info(`POSITION_APP ${from}`);
 
             const position: Message = Position.decode(envelope.packet.decoded.payload);
 

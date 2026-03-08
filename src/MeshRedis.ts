@@ -55,7 +55,6 @@ class MeshRedis {
           });
           logger.error(`redis key: baymesh:nodeinfo:${node} ${err}`);
         });
-      logger.info(`updated node info for: ${node}`);
     } catch (err) {
       logger.error(err.message);
       // Sentry.captureException(err);

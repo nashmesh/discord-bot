@@ -1,5 +1,7 @@
 import config from "Config";
 import { CacheType, ChatInputCommandInteraction } from "discord.js";
+import { NodeError } from "errors/NodeError";
+import logger from "Logger";
 
 const nodeId2hex = (nodeId: string | number) => {
   return typeof nodeId === "number"
@@ -16,35 +18,41 @@ const validateNodeId = (nodeId: string): string | null => {
     return null;
   }
 
-  if (nodeId.length !== 8) {
-    try {
-      const nodeIdHex = nodeId2hex(parseInt(nodeId));
-      if (nodeIdHex.length === 8) {
-        return nodeIdHex;
-      }
-    } catch (e) {
+  const hexRegex = /^[0-9a-fA-F]{8}/;
+  if (!hexRegex.test(nodeId)) {
+    if (nodeId.length <= 8) {
       return null;
     }
-  } else {
-    return nodeId;
+
+    // try to convert from integer to hex if provided
+    nodeId = nodeId2hex(parseInt(nodeId));
   }
 
-  return null;
+  if (nodeId.length !== 8) {
+    return null;
+  }
+
+  return nodeId;
 };
 
 const fetchNodeId = (interaction: ChatInputCommandInteraction<CacheType>): string | null => {
   const mallaUrl = config.getMallaURL(interaction.guildId);
 
-  let nodeId = interaction.options
+  let nodeId: string | null | undefined = interaction.options
     .getString("nodeid")?.replace(`https://${mallaUrl}/node/`, "")
     .replace("!", "")
     .trim();
 
-  if (nodeId === undefined || nodeId === null) {
+  if (nodeId === undefined) {
     return null;
   }
 
-  return validateNodeId(nodeId);
+  nodeId = validateNodeId(nodeId);
+  if (nodeId === null) {
+    return null;
+  }
+
+  return nodeId;
 };
 
 export { nodeId2hex, nodeHex2id, validateNodeId, fetchNodeId };

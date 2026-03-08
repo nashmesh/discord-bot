@@ -1,53 +1,62 @@
 import * as fsPromises from 'fs/promises';
 import logger from './Logger';
 
-interface ConfigInterface {
+export interface ConfigInterface {
     environment: string;
     discord: DiscordConfigInterface;
     availableLinkTypes: string[];
     mqtt: MqttConfigInterface;
     redis: RedisConfigInterface;
+    db: DBConfigInterface;
     version: string;
 }
 
-interface DiscordConfigInterface {
+export interface DBConfigInterface {
+    path: string;
+}
+
+export interface DiscordConfigInterface {
     token: string;
+    nickname: string;
     clientId: string;
     guilds: GuildConfigMap[];
 }
 
-interface MqttConfigInterface {
+export interface MqttConfigInterface {
     host: string;
     port: number;
     username: string;
     password: string;
 }
 
-interface RedisConfigInterface {
+export interface RedisConfigInterface {
     dsn: string;
 }
 
-interface GuildConfigMap {
+export interface GuildConfigMap {
     [guildId: string]: GuildConfigInterface;
 }
 
-interface GuildConfigInterface {
+export interface GuildConfigInterface {
     guildId: string;
-    channelLongFast: string;
-    channelMediumSlow: string;
-    channelHighAltitudeBalloon: string;
+    nickname: string;
+    avatarUrl: string;
     topics: string[];
     malla: string;
     channels: string[];
 }
 
 class Config {
-    content: ConfigInterface | undefined = undefined;
+    content: ConfigInterface = {} as ConfigInterface;
 
     public async init() {
         try {
             const fileContent = await fsPromises.readFile("./config.json", 'utf-8');
             this.content = JSON.parse(fileContent) as ConfigInterface;
+
+            if (this.content === undefined) {
+                logger.error("Error reading in config.json");
+            }
 
             // this.validateConfiguration();
             logger.info(`Version: ${this.content.version}`);
@@ -75,7 +84,7 @@ class Config {
         return this.content.discord.guilds[guildId].malla;
     }
 
-    public getDiscordChannel(guildId: string, channelName: string) {
+    public getDiscordChannelForMeshChannel(guildId: string, channelName: string) {
         const channelId = this.content?.discord.guilds[guildId].channels[channelName];
 
         if (channelId === undefined) {
@@ -83,6 +92,42 @@ class Config {
         }
 
         return channelId;
+    }
+
+    public hasGuild(guildId: string) {
+        // const key = guildId keyof GuildConfigMap;
+        return this.content?.discord.guilds[guildId] !== undefined;
+    }
+
+    public getGuildConfig(guildId: String): GuildConfigInterface | undefined {
+        return this.content?.discord.guilds[guildId];
+    }
+
+    public getGuildsForTopic(topic: string): string[] {
+        const guildIds: string[] = [];
+
+        for (const [key, config] of Object.entries(this.content.discord.guilds)) {
+            const topics: string[] = config.topics;
+
+            topics.forEach((t: string) => {
+                if (topic.startsWith(t)) {
+                    guildIds.push(key)
+                }
+            })
+        }
+
+        return [...new Set(guildIds)];
+    }
+
+    public getGuilds(): GuildConfigInterface[] {
+        const configs: GuildConfigInterface[] = [];
+
+        for (const [key, config] of Object.entries(this.content.discord.guilds)) {
+            config['guildId'] = key;
+            configs.push(config);
+        }
+
+        return configs;
     }
 }
 

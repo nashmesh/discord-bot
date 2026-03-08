@@ -17,7 +17,6 @@ export const createDiscordMessage = async (packetGroup: PacketGroup, text: strin
     const from = nodeId2hex(packet.from);
     const nodeIdHex = nodeId2hex(from);
     const portNum = packet?.decoded?.portnum;
-    logger.info(`portNum: ${portNum}`);
     let msgText = text;
 
     let nodeInfos = await meshRedis.getNodeInfos(
@@ -41,7 +40,7 @@ export const createDiscordMessage = async (packetGroup: PacketGroup, text: strin
         return null;
       }
 
-      let payload: Node = await meshDB.client.node.findFirst({
+      let payload: Node | null = await meshDB.client.node.findFirst({
         where: {
           hexId: nodeId
         }
@@ -54,7 +53,6 @@ export const createDiscordMessage = async (packetGroup: PacketGroup, text: strin
     }
 
     const nodeOwner = await getNodeOwner(nodeIdHex.replace('!', ''));
-    logger.info(`nodeIdHex: ${nodeIdHex}, discordUserId: ${nodeOwner}`);
 
     let ownerField;
     if (nodeOwner) {
@@ -91,7 +89,7 @@ export const createDiscordMessage = async (packetGroup: PacketGroup, text: strin
         self.findIndex((t) => t.gatewayId === value.gatewayId) === index,
     ).length;
 
-    logger.info(`gatewayCount: ${gatewayCount}`);
+    // logger.info(`gatewayCount: ${gatewayCount}`);
 
     const infoFields: any = [];
 
@@ -99,14 +97,11 @@ export const createDiscordMessage = async (packetGroup: PacketGroup, text: strin
     let mapUrl = "";
 
     let lastPosition = await meshRedis.getLastPosition(from);
-    if (lastPosition) {
+    if (typeof lastPosition === 'string') {
       lastPosition = JSON.parse(lastPosition);
-      logger.info(`Found last position for ${from}`);
 
       mapImageUrl = `https://api.smerty.org/api/v1/maps/static?lat=${lastPosition.latitude / 10000000}&lon=${lastPosition.longitude / 10000000}&width=400&height=100&zoom=12`;
       mapUrl = `https://map.tnmesh.org/?node_id=${nodeHex2id(from)}&zoom=13`
-      logger.info(mapImageUrl)
-      logger.info(mapUrl)
     }
 
     if (ownerField) {

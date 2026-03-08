@@ -1,4 +1,4 @@
-import { EmbedBuilder, Guild, Message, TextChannel } from "discord.js";
+import { APIEmbedField, Guild, Message } from "discord.js";
 import CommandMessage from "./CommandMessage";
 import meshDB from "MeshDB";
 import { Pagination } from "pagination.djs";
@@ -24,7 +24,7 @@ export default class LinksMessageCommand extends CommandMessage {
             }
         });
 
-        const fields = [];
+        const fields = [] as APIEmbedField[];
         links.forEach((link) => {
             fields.push({
                 name: `!${link.type}`,

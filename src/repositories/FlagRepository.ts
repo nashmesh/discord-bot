@@ -24,7 +24,7 @@ export class FlagRepository {
         }
 
         public static async getFlag(node: Node, key: string): Promise<Flag | null> {
-            const flag: Flag = await meshDB.client.flag.findFirst({
+            const flag: Flag | null = await meshDB.client.flag.findFirst({
                 where: {
                     nodeId: node.id,
                     key: key
@@ -36,5 +36,13 @@ export class FlagRepository {
             }
 
             return flag;
+        }
+
+        public static async getFlags(node: Node): Promise<Flag[]> {
+            return await meshDB.client.flag.findMany({
+                where: {
+                    nodeId: node.id
+                }
+            })
         }
 }

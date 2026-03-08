@@ -59,8 +59,8 @@ const processTextMessage = async (packetGroup: PacketGroup, client: Client, guil
   const channelId = packetGroup.serviceEnvelopes[0].channelId;
   const content = await createDiscordMessage(packetGroup, text, balloonNode, client, guild, channelId);
 
-  let discordChannel = fetchDiscordChannel(guild, config.getDiscordChannel(guild.id, channelId));
-  // let discordChannel = guild.channels.fetch(config.getDiscordChannel(guild.id, channelId));
+  let discordChannel = fetchDiscordChannel(guild, config.getDiscordChannelForMeshChannel(guild.id, channelId));
+
   if (discordChannel === null) {
     logger.warn(
       "No discord channel found for channelId: " +

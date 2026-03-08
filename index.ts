@@ -2,13 +2,11 @@ import {
   Client,
   GatewayIntentBits,
   REST,
-  Routes,
-  MessageFlags,
-  GuildMember,
   User as DiscordUser,
-  userMention,
-  chatInputApplicationCommandMention,
   Message,
+  MessageFlags,
+  Routes,
+  ApplicationCommandOptionType,
 } from "discord.js";
 import { fileURLToPath } from "url";
 import path, { dirname } from "path";
@@ -19,16 +17,19 @@ import mqtt from "mqtt";
 import FifoCache from "./src/FifoCache";
 import MeshPacketCache, {
   PacketGroup,
+  ServiceEnvelope,
 } from "./src/MeshPacketCache";
 import meshRedis from "./src/MeshRedis";
 import meshDB from "./src/MeshDB";
 import config from "./src/Config";
 import logger from "./src/Logger";
 import { CommandMessageType, CommandType, commands, messageCommands } from "./src/Commands";
-import { fetchDiscordChannel } from "./src/DiscordUtils";
 import { processTextMessage } from "./src/MessageUtils";
 import { handleMqttMessage } from "./src/MqttUtils";
 import LinkCommandMessage from "./src/commands/message/LinkCommandMessage";
+import { DiscordError } from "errors/error";
+import { NodeError } from "errors/NodeError";
+import HelpCommand from "./src/commands/HelpCommand";
 
 // generate a pseduo uuid kinda thing to use as an instance id
 const INSTANCE_ID = (() => {
@@ -38,33 +39,9 @@ logger.init(INSTANCE_ID);
 
 logger.info("Starting Mesh Logger");
 
-const DISCORD_CLIENT_ID = process.env["DISCORD_CLIENT_ID"];
-const DISCORD_TOKEN = process.env["DISCORD_TOKEN"];
-const DISCORD_GUILD = process.env["DISCORD_GUILD"];
-const REDIS_URL = process.env["REDIS_URL"];
-const NODE_INFO_UPDATES = process.env["NODE_INFO_UPDATES"] === "1";
-const MQTT_BROKER_URL = process.env["MQTT_BROKER_URL"];
-const MQTT_TOPICS = JSON.parse(process.env["MQTT_TOPICS"] || "[]");
-
-if (MQTT_BROKER_URL === undefined || MQTT_BROKER_URL.length === 0) {
-  throw new Error("MQTT_BROKER_URL is not set");
-}
-
-if (REDIS_URL === undefined || REDIS_URL.length === 0) {
-  throw new Error("REDIS_URL is not set");
-}
-
-if (DISCORD_CLIENT_ID === undefined || DISCORD_CLIENT_ID.length === 0) {
-  throw new Error("DISCORD_CLIENT_ID is not set");
-}
-
-if (DISCORD_TOKEN === undefined || DISCORD_TOKEN.length === 0) {
-  throw new Error("DISCORD_TOKEN is not set");
-}
-
-if (DISCORD_GUILD === undefined || DISCORD_GUILD.length === 0) {
-  throw new Error("DISCORD_GUILD is not set");
-}
+const NODE_INFO_UPDATES = true;
+// const NODE_INFO_UPDATES = process.env["NODE_INFO_UPDATES"] === "1";
+const RELOAD_COMMANDS = process.env["RELOAD_COMMANDS"] === "1";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -85,29 +62,63 @@ const discordMessageIdCache = new FifoCache<string, string>();
 const meshPacketCache = new MeshPacketCache();
 
 const client: Client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ],
 });
 
 await config.init();
-await meshRedis.init(REDIS_URL);
+await meshRedis.init(config.content?.redis.dsn);
 await meshDB.init();
 
-// Register the slash command with Discord using the REST API.
-const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
+const rest = new REST({ version: "10" }).setToken(config.content.discord.token);
 
+// Register the slash command with Discord using the REST API.
 (async () => {
+  if (!RELOAD_COMMANDS) {
+    logger.info("Skipping reloading commands");
+    return;
+  }
   try {
     logger.info("Started refreshing application (/) commands.");
 
-    // Register the command for a specific guild (for development, guild commands update faster).
-    await rest.put(
-      Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD),
-      {
-        body: commands,
-      },
-    );
+    config.getGuilds().forEach(async (guildConfig) => {
+      try {
+        // Add help command once all commands are loaded into memory
+        commands.push({
+            name: "help",
+            description: "View a help guide for a command",
+            class: new HelpCommand,
+            options: [
+              {
+                name: "command",
+                type: ApplicationCommandOptionType.String,
+                description: "The command to lookup",
+                required: false,
+                choices: commands.map((value) => {
+                  return {
+                    name: value.name,
+                    value: value.name
+                  }
+                })
+              },
+            ],
+        });
 
-    logger.info("Successfully reloaded application (/) commands.");
+        await rest.put(
+          Routes.applicationGuildCommands(config.content.discord.clientId, guildConfig.guildId),
+          {
+            body: commands,
+          },
+        );
+
+        logger.info(`Successfully reloaded application (/) commands.`);
+      } catch (error) {
+        logger.error(error);
+      }
+    });
   } catch (error) {
     logger.error(error);
   }
@@ -115,20 +126,38 @@ const rest = new REST({ version: "10" }).setToken(DISCORD_TOKEN);
 
 // When Discord client is ready, start the MQTT connection.
 client.once("ready", () => {
-  logger.info(`Logged in as ${client.user.tag}!`);
+  const user = client.user;
 
-  const guild = client.guilds.cache.find((g) => g.id === DISCORD_GUILD);
-  if (!guild) {
-    logger.error("No guild available for the bot");
+  if (user === null) {
     return;
-  } else {
-    logger.info(JSON.stringify(guild));
+  }
+
+  let loaded = false;
+  client.guilds.cache.forEach((guild) => {
+    const guildConfig = config.getGuildConfig(guild.id);
+
+    if (guildConfig === undefined) {
+      return;
+    }
+
+    const bot = guild.members.cache.get(user.id);
+    bot?.setNickname(
+      guildConfig.nickname ?? config.content?.discord.nickname ?? 'Meshtastic Bot'
+    );
+
+    logger.info(`Logged in as ${guild.members.cache.get(user.id)?.nickname} on ${guild.name}!`);
+    loaded = true;
+  })
+
+  if (!loaded) {
+    logger.error("No channels found to join");
+    return;
   }
 
   // Connect to the MQTT broker.
-  const mqttClient = mqtt.connect(MQTT_BROKER_URL, {
-    username: "meshdev",
-    password: "large4cats",
+  const mqttClient = mqtt.connect(config.content.mqtt.host ?? 'mqtt.tnmesh.org', {
+    username: config.content.mqtt.username,
+    password: config.content.mqtt.password,
   });
 
   const getCommand = (commandName: string): CommandType | undefined => {
@@ -153,8 +182,14 @@ client.once("ready", () => {
 
   // Message
   client.on("messageCreate", async (message: Message) => {
-    if (message.guildId !== DISCORD_GUILD) {
-      logger.warn("Received message from non-guild");
+    const guild = message.guild;
+
+    if (guild === null) {
+      logger.info(`Unhandled DM from ${message.author.globalName ?? 'Unknown User'}`)
+      return;
+    }
+
+    if (!config.hasGuild(guild.id)) {
       return;
     }
 
@@ -176,6 +211,7 @@ client.once("ready", () => {
       // Is this a link command?
       const linkCommand: LinkCommandMessage | undefined = getLinkCommand(commandName);
       if (linkCommand !== undefined) {
+        logger.info(`[linkCommand] ${message.author.displayName} used !${commandName}`);
         await linkCommand.handle(message.guild, commandArguments, message);
         return;
       }
@@ -186,14 +222,21 @@ client.once("ready", () => {
         return;
       }
 
+      logger.info(`[messageCommand] ${message.author.displayName} used !${commandName}`);
       (<CommandMessageType>command).class.handle(guild, commandArguments, message);
     }
   });
 
   // Interactions
   client.on("interactionCreate", async (interaction) => {
-    if (interaction.guildId !== DISCORD_GUILD) {
-      logger.warn("Received interaction from non-guild");
+    const guild = interaction.guild;
+
+    if (guild === null) {
+      logger.info("Unhandled interaction");
+      return;
+    }
+
+  if (!config.hasGuild(guild.id)) {
       return;
     }
 
@@ -206,31 +249,64 @@ client.once("ready", () => {
       return;
     }
 
-    (<CommandType>command).class.handle(interaction);
+    logger.info(`[interactionCommand] ${interaction.user.globalName} used /${commandName}`);
+    try {
+      await (<CommandType>command).class.handle(interaction);
+    } catch (error) {
+      if (error instanceof DiscordError) {
+        logger.error(`${interaction.user.globalName}: ${error.message}`);
+
+        await interaction.reply({
+            content: error.message,
+            flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
+      logger.error(`${interaction.user.displayName}: ${error}`);
+
+      await interaction.reply({
+        content: 'Something went wrong with this command',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
   });
 
   // Collect packet groups every 5 seconds
   setInterval(() => {
     const packetGroups = meshPacketCache.getDirtyPacketGroups();
-    // logger.info("Processing " + packetGroups.length + " packet groups");
+
     packetGroups.forEach((packetGroup: PacketGroup) => {
-      // processPacketGroup(packetGroup);
       if (packetGroup.serviceEnvelopes[0].packet?.decoded?.portnum === 3) {
-        logger.info("Processing packet group: " + packetGroup.id + " POSITION");
+        logger.info("[packetProcessing] Processing packet group: " + packetGroup.id + " POSITION");
       } else {
         logger.info(
-          "Processing packet group: " +
+          "[packetProcessing] Processing packet group: " +
             packetGroup.id +
             " with text: " +
             packetGroup.serviceEnvelopes[0].packet.decoded.payload.toString(),
         );
       }
-      processTextMessage(packetGroup, client, guild, discordMessageIdCache);
+
+      let guildIds = config.getGuildsForTopic(packetGroup.serviceEnvelopes[0].topic);
+      guildIds.forEach((guildId) => {
+        let guild = client.guilds.cache.get(guildId);
+
+        if (guild === undefined) {
+          logger.error(`[packetProcessing] Failed sending to ${guildId}`);
+          return;
+        }
+
+        logger.info(`[packetProcessing] Sending to ${guild.name}`);
+
+        processTextMessage(packetGroup, client, guild, discordMessageIdCache);
+      })
+
     });
   }, 5000);
 
   mqttClient.on("error", (err) => {
-    logger.error("MQTT Client Error:", err);
+    logger.error(`MQTT Client Error: ${err}`);
   });
 
   mqttClient.on("connect", () => {
@@ -238,7 +314,7 @@ client.once("ready", () => {
     // Subscribe to the topic where your packets are published.
     mqttClient.subscribe("msh/US/#", (err) => {
       if (err) {
-        logger.error("Error subscribing to MQTT topic:", err);
+        logger.error(`Error subscribing to MQTT topic: ${err}`);
       } else {
         logger.info("Subscribed to MQTT topic");
       }
@@ -246,9 +322,9 @@ client.once("ready", () => {
   });
 
   mqttClient.on("message", async (topic, message) => {
-    await handleMqttMessage(topic, message, MQTT_TOPICS, meshPacketCache, NODE_INFO_UPDATES, MQTT_BROKER_URL);
+    await handleMqttMessage(topic, message, meshPacketCache, NODE_INFO_UPDATES);
   });
 });
 
 // Log in to Discord.
-client.login(DISCORD_TOKEN);
+client.login(config.content?.discord.token);

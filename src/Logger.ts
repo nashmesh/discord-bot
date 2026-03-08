@@ -21,7 +21,7 @@ class Logger {
     this.logLevel = level;
   }
 
-  log(level: string, message: string) {
+  log(level: string, message: any) {
     const levels = ["DEBUG", "INFO", "WARN", "ERROR"];
     if (levels.indexOf(level) >= levels.indexOf(this.logLevel)) {
       console.log(`${loggerDateString()}[${this.instanceId}] [${level}] ${message}`);
@@ -40,7 +40,7 @@ class Logger {
     this.log("WARN", message);
   }
 
-  error(message: string) {
+  error(message: any) {
     this.log("ERROR", message);
   }
 }

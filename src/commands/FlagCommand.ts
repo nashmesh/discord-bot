@@ -1,55 +1,167 @@
-import { ChatInputCommandInteraction, MessageFlags } from "discord.js";
+import { APIEmbedField, ChatInputCommandInteraction, MessageFlags } from "discord.js";
 import Command from "@commands/Command";
 import meshDB from "MeshDB";
 import { Flag, Node } from "generated/prisma/client";
 import { FlagProperties, Flags, FlagValue } from "Flags";
 import { FlagRepository } from "@repositories/FlagRepository";
+import { FlagError } from "./errors/FlagError";
+import { NodeError } from "errors/NodeError";
+import { Pagination } from "pagination.djs";
+import logger from "Logger";
 
-const typeMap = {
+const typeMap: { [key: string]: any } = {
     'boolean': Boolean,
     'string': String,
     'number': Number
 }
 
+type CommandConfiguration = {
+    callback: (node: Node, key: string | null, interaction: ChatInputCommandInteraction) => Promise<void>;
+    requiresKey: boolean;
+    requiresValue: boolean;
+};
+
 export default class FlagCommand extends Command {
 
-    static commands: object = {
-        'set': this.setCommand,
-        'get': this.getCommand,
+    static commands: { [key: string]: CommandConfiguration } = {
+        'set': {
+            requiresKey: true,
+            requiresValue: true,
+            callback: this.setCommand,
+        },
+        'get': {
+            requiresKey: true,
+            requiresValue: false,
+            callback: this.getCommand,
+        },
+        'list': {
+            requiresKey: false,
+            requiresValue: false,
+            callback: this.listCommand
+        },
+        // 'listCommands': {
+        //     requiresKey: false,
+        //     requiresValue: false,
+        //     callback: this.listCommandsCommand
+        // }
     };
 
     constructor() {
         super("flag");
     }
 
-    public async handle(interaction: ChatInputCommandInteraction): Promise<void> {
-        const nodeId = this.fetchNodeId(interaction);
-        const command = interaction.options.getString('command');
-
-        if (!nodeId) {
-            await interaction.reply({
-                content: "Please provide a valid `nodeid` that you own",
-                ephemeral: true,
-            });
-            return;
-        }
-
-        await this.handleCommand(command, nodeId, interaction);
+    public getHelpFields(): APIEmbedField[] {
+        return [
+            {
+                name: 'Available Flags',
+                value: '`showPosition`'
+            },
+            {
+                name: 'List flags for a node',
+                value: '`/flags nodeid list`'
+            },
+            {
+                name: 'Example',
+                value: '`/flags 677d3afe list`'
+            },
+            {
+                name: 'Set flag on node',
+                value: '`/flags nodeid set key value`'
+            },
+            {
+                name: 'Example',
+                value: '`/flags 677d3afe set showPosition true`'
+            },
+            {
+                name: 'Get the current flag on node',
+                value: '`/flags nodeid get key`'
+            },
+            {
+                name: 'Example',
+                value: '`/flags 677d3afe get showPosition`'
+            },
+        ]
     }
 
-    /**
-     * Handle flag command
-     * @param command
-     * @param nodeId
-     * @param interaction
-     * @returns
-     */
-    private async handleCommand(command: string, nodeId: string, interaction: ChatInputCommandInteraction): Promise<void> {
-        if (!FlagCommand.commands[command]) {
-            return;
+    public async handle(interaction: ChatInputCommandInteraction): Promise<void> {
+        const command = interaction.options.getString('command');
+        if (command === null) {
+            throw new FlagError({name: 'NO_COMMAND_PROVIDED'});
         }
 
-        await FlagCommand.commands[command](nodeId, interaction);
+        const commandConfiguration = FlagCommand.commands[command];
+        if (commandConfiguration === null) {
+            throw new FlagError({name: 'COMMAND_NOT_FOUND'});
+        }
+
+        const key = interaction.options.getString('key');
+        if (key === null && commandConfiguration.requiresKey === true) {
+            throw new FlagError({name: 'NO_COMMAND_KEY_PROVIDED'});
+        }
+
+        const nodeId = this.fetchNodeId(interaction);
+        if (nodeId === null) {
+            throw new NodeError({name: 'INVALID_NODE_PROVIDED'});
+        }
+
+        const node = await FlagCommand.getNodeForUser(nodeId, interaction);
+        if (this.nodeHasOwner(node) === false) {
+            throw new NodeError({name: 'NODE_IS_NOT_LINKED'});
+        }
+
+        if (this.nodeBelongsToUser(node, interaction) === false) {
+            throw new NodeError({
+                name: 'NODE_DOES_NOT_BELONG_TO_USER'
+            });
+        }
+
+        await commandConfiguration.callback(node, key, interaction);
+    }
+
+    // private static async listCommandsCommand(node: Node, key: string | null, interaction: ChatInputCommandInteraction): Promise<void> {
+    //     const fields = [] as APIEmbedField[];
+
+    //     for (const [key] of Object.entries(FlagCommand.commands)) {
+    //         fields.push({
+    //             name: key,
+    //             value: key,
+    //         });
+    //     }
+
+    //     const pagination = new Pagination(interaction);
+    //     pagination.setFields(fields);
+    //     pagination.setTitle('Flags')
+    //     pagination.paginateFields();
+    //     pagination.setEphemeral(true);
+    //     pagination.render();
+    // }
+
+    private static async listCommand(node: Node, key: string | null, interaction: ChatInputCommandInteraction): Promise<void> {
+        const fields = [] as APIEmbedField[];
+
+        let values: {[key: string]: any} = {};
+        Flags.getFlags().forEach((properties) => {
+            values[properties.key] = properties.default;
+        });
+
+        let currentValues: {[key: string]: any} = {};
+        (await FlagRepository.getFlags(node)).forEach((flag) => {
+            currentValues[flag.key] = flag.value;
+        })
+
+        for (const [key, value] of Object.entries(values)) {
+            fields.push({
+                name: key,
+                value: currentValues[key] ?? value,
+            });
+        }
+
+        const pagination = new Pagination(interaction);
+        pagination.setFields(fields);
+        pagination.setTitle('Flags')
+        pagination.paginateFields();
+        pagination.setEphemeral(true);
+        pagination.render();
     }
 
     /**
@@ -58,14 +170,8 @@ export default class FlagCommand extends Command {
      * @param interaction
      * @returns
      */
-    private static async setCommand(nodeId: string, interaction: ChatInputCommandInteraction): Promise<void> {
-        const node = await FlagCommand.getNodeForUser(nodeId, interaction);
-
-        if (!node) {
-            return;
-        }
-
-        const key = interaction.options.getString('key');
+    private static async setCommand(node: Node, key: string | null, interaction: ChatInputCommandInteraction): Promise<void> {
+        key = key as string;
 
         let value: FlagValue | null = null;
 
@@ -109,7 +215,7 @@ export default class FlagCommand extends Command {
         }
 
         // is the value different from the current value set, if one already exists
-        const flag: Flag = await FlagRepository.getFlag(node, key);
+        const flag: Flag | null = await FlagRepository.getFlag(node, key);
         if (flag && flag.value === value) {
             await interaction.reply({ content: `:flag_white: \`${key}\` **is already set to** \`${value.toString()}\` **for** \`!${node.hexId}\``, flags: MessageFlags.Ephemeral });
             return;
@@ -127,10 +233,9 @@ export default class FlagCommand extends Command {
      * @param interaction
      * @returns
      */
-    private static async getCommand(nodeId: string, interaction: ChatInputCommandInteraction): Promise<void> {
-        const node = await FlagCommand.getNodeForUser(nodeId, interaction);
+    private static async getCommand(node: Node, key: string | null, interaction: ChatInputCommandInteraction): Promise<void> {
+        key = key as string;
 
-        const key = interaction.options.getString('key');
         const flagProperties: FlagProperties | undefined = Flags.getFlagProperties(key);
 
         if (flagProperties === undefined) {
@@ -140,14 +245,14 @@ export default class FlagCommand extends Command {
 
         const flag = await FlagRepository.getFlag(node, key);
         if (flag === null) {
-            await interaction.reply({ content: `:flag_white: \`${key}\` **is currently set to** \`${flagProperties.default.toString()}\` **for** \`!${node.hexId}\``, flags: MessageFlags.Ephemeral });
+            await interaction.reply({ content: `:flag_white: \`${key}\` **is currently set to** \`${flagProperties.default?.toString()}\` **for** \`!${node.hexId}\``, flags: MessageFlags.Ephemeral });
             return;
         }
 
         let value = flag.value;
         const type = typeMap[flagProperties.type]
 
-        if (typeof value !== flagProperties.type) {
+        if (value === null || typeof value !== flagProperties.type) {
             return;
         }
 
@@ -165,27 +270,24 @@ export default class FlagCommand extends Command {
         await interaction.reply({ content: `:flag_white: \`${key}\` **is currently set to** \`${value.toString()}\` **for** \`!${node.hexId}\``, flags: MessageFlags.Ephemeral });
     }
 
-    private static async getNodeForUser(nodeId: string, interaction: ChatInputCommandInteraction): Promise<Node | null> {
+    private static async getNodeForUser(nodeId: string, interaction: ChatInputCommandInteraction): Promise<Node> {
         const node = await meshDB.client.node.findFirst({
             where: {
                 hexId: nodeId
             }
         });
 
-        if (!node) {
-            await interaction.reply({ content: 'This node has not been seen yet by an MQTT gateway node', flags: MessageFlags.Ephemeral });
-            return null;
+        if (node === null) {
+            throw new FlagError({name: 'NODE_NOT_SEEN_BY_MQTT'});
         }
 
         // @todo
-        if (!node.discordId) {
-            await interaction.reply({ content: 'This node is not linked to anyone. If you own this node, use the `/linknode` command', flags: MessageFlags.Ephemeral });
-            return null;
+        if (node.discordId === null) {
+            throw new FlagError({name: 'NODE_NOT_LINKED'});
         }
 
         if (node.discordId !== interaction.user.id) {
-            await interaction.reply({ content: 'This node does not belong to you', flags: MessageFlags.Ephemeral });
-            return null;
+            throw new FlagError({name: 'NODE_DOES_NOT_BELONG_TO_USER'});
         }
 
         return node;
