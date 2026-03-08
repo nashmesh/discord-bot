@@ -35,6 +35,7 @@ export default class HelpCommand extends Command {
         pagination.setFields(fields);
         pagination.setTitle(`Help Guide: /${command}`);
         pagination.paginateFields();
+        pagination.setEphemeral(true);
         pagination.render();
     }
 }
