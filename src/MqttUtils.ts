@@ -7,6 +7,7 @@ import logger from "./Logger";
 import { Message } from "protobufjs";
 import meshDB from "MeshDB";
 import config from "Config";
+import crypto from "crypto";
 
 const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDATES) => {
   try {
@@ -105,6 +106,63 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
             );
           }
         }
+      }
+    } else if (topic.includes("meshcore")) {
+      try {
+        const payload = JSON.parse(message.toString());
+        logger.info(`[meshcore] raw: ${JSON.stringify(payload)}`);
+
+        if (payload.type === "PACKET" && (payload.packet_type === "3" || payload.packet_type === "5")) {
+          const rawBytes = Buffer.from(payload.raw, 'hex');
+
+          // Parse path length byte: bits 6-7 = hash size code (size = code+1), bits 0-5 = hop count
+          let offset = 1;
+          const pathLenByte = rawBytes[offset++];
+          const hashSize = (pathLenByte >> 6) + 1;
+          const hopCount = pathLenByte & 0x3F;
+          offset += hopCount * hashSize;
+
+          // GRP_TXT payload: [channel_hash: 1][mac: 2][ciphertext: rest]
+          const channelHashHex = rawBytes[offset++].toString(16).padStart(2, '0');
+          const mac = rawBytes.slice(offset, offset + 2);
+          offset += 2;
+          const ciphertext = rawBytes.slice(offset);
+
+          // Try each configured channel key
+          const channelKeys: Record<string, string> = config.content.meshcore?.channels ?? {};
+          let decrypted = false;
+
+          for (const [channelName, keyHex] of Object.entries(channelKeys)) {
+            const key = Buffer.from(keyHex, 'hex');
+            if (key.length !== 16) continue;
+
+            // HMAC-SHA256 verification: secret = key + 16 zero bytes
+            const channelSecret = Buffer.concat([key, Buffer.alloc(16, 0)]);
+            const expectedMac = crypto.createHmac('sha256', channelSecret).update(ciphertext).digest();
+            if (expectedMac[0] !== mac[0] || expectedMac[1] !== mac[1]) continue;
+
+            // AES-128-ECB decrypt
+            const cipher = crypto.createDecipheriv('aes-128-ecb', key, null);
+            cipher.setAutoPadding(false);
+            const plaintext = Buffer.concat([cipher.update(ciphertext), cipher.final()]);
+
+            // Plaintext: [timestamp: 4 LE][flags: 1][sender: message\0]
+            const text = plaintext.slice(5).toString('utf8').split('\0')[0];
+            const colonIdx = text.indexOf(': ');
+            const sender = colonIdx > 0 ? text.slice(0, colonIdx) : payload.origin;
+            const messageText = colonIdx > 0 ? text.slice(colonIdx + 2) : text;
+
+            logger.info(`[meshcore] [${channelName}] from=${sender}: ${messageText}`);
+            decrypted = true;
+            break;
+          }
+
+          if (!decrypted) {
+            logger.info(`[meshcore] no key matched channel 0x${channelHashHex} (origin=${payload.origin})`);
+          }
+        }
+      } catch (e) {
+        logger.error(`[meshcore] Failed to parse: ${e}`);
       }
     }
   } catch (err) {

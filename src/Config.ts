@@ -6,6 +6,7 @@ export interface ConfigInterface {
     discord: DiscordConfigInterface;
     availableLinkTypes: string[];
     mqtt: MqttConfigInterface;
+    meshcore: MeshcoreConfigInterface;
     redis: RedisConfigInterface;
     db: DBConfigInterface;
     version: string;
@@ -27,6 +28,10 @@ export interface MqttConfigInterface {
     port: number;
     username: string;
     password: string;
+}
+
+export interface MeshcoreConfigInterface {
+    channels: Record<string, string>; // channel name -> 16-byte hex key
 }
 
 export interface RedisConfigInterface {
