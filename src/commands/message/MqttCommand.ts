@@ -17,8 +17,8 @@ export default class MqttCommand extends CommandMessage {
 
         let channel: TextChannel = <TextChannel>message.channel;
 
-        let embed = (new EmbedBuilder())
-            .setTitle('MQTT Details')
+        let meshtasticEmbed = (new EmbedBuilder())
+            .setTitle('Meshtastic MQTT Details')
             .addFields(
                 { name: 'MQTT Host', value: 'mqtt.nashme.sh', inline: true },
                 { name: 'MQTT Username', value: 'meshdev', inline: true },
@@ -29,6 +29,15 @@ export default class MqttCommand extends CommandMessage {
                 { name: 'Read More', value: 'https://nashme.sh/mqtt', inline: true },
             );
 
-        await channel.send({ embeds: [embed] });
+        let meshcoreEmbed = (new EmbedBuilder())
+            .setTitle('MeshCore MQTT Details')
+            .addFields(
+                { name: 'MQTT Host', value: 'mqtt.nashme.sh', inline: true },
+                { name: 'MQTT Username', value: 'meshdev', inline: true },
+                { name: 'MQTT Password', value: 'large4cats', inline: true },
+                { name: 'Read More', value: 'https://nashme.sh/mqtt', inline: true },
+            );
+
+        await channel.send({ embeds: [meshcoreEmbed, meshtasticEmbed] });
     }
 }
