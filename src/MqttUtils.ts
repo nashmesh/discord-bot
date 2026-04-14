@@ -1,5 +1,5 @@
 import { ServiceEnvelope, Position, User } from "../index";
-import MeshPacketCache from "./MeshPacketCache";
+import MeshPacketCache, { ServiceEnvelope as MeshServiceEnvelope } from "./MeshPacketCache";
 import { decrypt } from "./decrypt";
 import meshRedis from "./MeshRedis";
 import { nodeId2hex } from "./NodeUtils";
@@ -110,7 +110,7 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
     } else if (topic.includes("meshcore")) {
       try {
         const payload = JSON.parse(message.toString());
-        logger.info(`[meshcore] raw: ${JSON.stringify(payload)}`);
+        // logger.info(`[meshcore] raw: ${JSON.stringify(payload)}`);
 
         if (payload.type === "PACKET" && (payload.packet_type === "3" || payload.packet_type === "5")) {
           const rawBytes = Buffer.from(payload.raw, 'hex');
@@ -121,6 +121,11 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
           const hashSize = (pathLenByte >> 6) + 1;
           const hopCount = pathLenByte & 0x3F;
           offset += hopCount * hashSize;
+
+          // Content hash: SHA256(header + payload), path-independent — same across all observers
+          const contentHash = crypto.createHash('sha256')
+            .update(Buffer.concat([rawBytes.slice(0, 1), rawBytes.slice(offset)]))
+            .digest('hex').slice(0, 16).toUpperCase();
 
           // GRP_TXT payload: [channel_hash: 1][mac: 2][ciphertext: rest]
           const channelHashHex = rawBytes[offset++].toString(16).padStart(2, '0');
@@ -152,13 +157,43 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
             const sender = colonIdx > 0 ? text.slice(0, colonIdx) : payload.origin;
             const messageText = colonIdx > 0 ? text.slice(colonIdx + 2) : text;
 
-            logger.info(`[meshcore] [${channelName}] from=${sender}: ${messageText}`);
+            logger.info(`[meshcore] [${channelName}] id=${contentHash} hops=${hopCount} observer=${payload.origin} from=${sender}: ${messageText}`);
+
+            const packetId = parseInt(contentHash.slice(0, 8), 16);
+            const fromId = parseInt(payload.origin_id.slice(0, 8), 16);
+
+            const envelope: MeshServiceEnvelope = {
+              packet: {
+                from: fromId,
+                to: 0xFFFFFFFF,
+                channel: 0,
+                encrypted: Buffer.alloc(0),
+                id: packetId,
+                rxTime: Math.floor(new Date(payload.timestamp).getTime() / 1000),
+                rxSnr: parseFloat(payload.SNR ?? '0'),
+                hopLimit: hopCount,
+                hopStart: hopCount,
+                wantAck: false,
+                rxRssi: parseInt(payload.RSSI ?? '0'),
+                decoded: {
+                  portnum: 1,
+                  payload: Buffer.from(messageText),
+                },
+              },
+              mqttTime: new Date(),
+              channelId: channelName,
+              gatewayId: payload.origin_id.slice(0, 8),
+              topic,
+              mqttServer: config.content.mqtt.host,
+            };
+
+            meshPacketCache.add(envelope, topic, config.content.mqtt.host);
             decrypted = true;
             break;
           }
 
           if (!decrypted) {
-            logger.info(`[meshcore] no key matched channel 0x${channelHashHex} (origin=${payload.origin})`);
+            logger.info(`[meshcore] no key matched channel 0x${channelHashHex} id=${contentHash} (origin=${payload.origin})`);
           }
         }
       } catch (e) {
