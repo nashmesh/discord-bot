@@ -1,5 +1,5 @@
 import { ServiceEnvelope, Position, User } from "../index";
-import MeshPacketCache, { ServiceEnvelope as MeshServiceEnvelope } from "./MeshPacketCache";
+import MeshPacketCache, { ServiceEnvelope as MeshServiceEnvelope, MeshPlatform } from "./MeshPacketCache";
 import { decrypt } from "./decrypt";
 import meshRedis from "./MeshRedis";
 import { nodeId2hex } from "./NodeUtils";
@@ -11,6 +11,8 @@ import crypto from "crypto";
 
 const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDATES) => {
   try {
+    const platform: MeshPlatform = topic.startsWith("meshcore") ? 'meshcore' : 'meshtastic';
+
     if (topic.includes("msh")) {
       if (!topic.includes("/json")) {
         if (topic.includes("/stat/")) {
@@ -69,6 +71,7 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
           }
 
           if (portnum === 1) {
+            (envelope as any).platform = platform;
             meshPacketCache.add(envelope, topic, config.content.mqtt.host);
           } else if (portnum === 3) {
             // const from = envelope.packet.from.toString(16);
@@ -110,7 +113,7 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
     } else if (topic.includes("meshcore")) {
       try {
         const payload = JSON.parse(message.toString());
-        // logger.info(`[meshcore] raw: ${JSON.stringify(payload)}`);
+        logger.info(`[meshcore] raw: ${JSON.stringify(payload)}`);
 
         if (payload.type === "PACKET" && (payload.packet_type === "3" || payload.packet_type === "5")) {
           const rawBytes = Buffer.from(payload.raw, 'hex');
@@ -157,7 +160,7 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
             const sender = colonIdx > 0 ? text.slice(0, colonIdx) : payload.origin;
             const messageText = colonIdx > 0 ? text.slice(colonIdx + 2) : text;
 
-            logger.info(`[meshcore] [${channelName}] id=${contentHash} hops=${hopCount} observer=${payload.origin} from=${sender}: ${messageText}`);
+            logger.info(`[meshcore] [${channelName}] id=${contentHash} hops=${hopCount} observer=${payload.origin} observer_id=${payload.origin_id.toLowerCase()} from=${sender}: ${messageText}`);
 
             const packetId = parseInt(contentHash.slice(0, 8), 16);
             const fromId = parseInt(payload.origin_id.slice(0, 8), 16);
@@ -171,20 +174,22 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
                 id: packetId,
                 rxTime: Math.floor(new Date(payload.timestamp).getTime() / 1000),
                 rxSnr: parseFloat(payload.SNR ?? '0'),
-                hopLimit: hopCount,
+                hopLimit: 0,
                 hopStart: hopCount,
                 wantAck: false,
                 rxRssi: parseInt(payload.RSSI ?? '0'),
                 decoded: {
                   portnum: 1,
-                  payload: Buffer.from(messageText),
+                  payload: Buffer.from(`${sender}: ${messageText}`),
                 },
               },
               mqttTime: new Date(),
               channelId: channelName,
-              gatewayId: payload.origin_id.slice(0, 8),
+              gatewayId: payload.origin_id.toLowerCase(),
               topic,
               mqttServer: config.content.mqtt.host,
+              platform: 'meshcore',
+              contentHash: contentHash.toLowerCase(),
             };
 
             meshPacketCache.add(envelope, topic, config.content.mqtt.host);
