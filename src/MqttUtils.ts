@@ -172,18 +172,35 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
             cipher.setAutoPadding(false);
             const plaintext = Buffer.concat([cipher.update(ciphertext), cipher.final()]);
 
-            // Plaintext: [timestamp: 4 LE][flags: 1][sender: message\0]
-            const text = plaintext.slice(5).toString('utf8').split('\0')[0];
-            const colonIdx = text.indexOf(': ');
-            const sender = colonIdx > 0 ? text.slice(0, colonIdx) : payload.origin;
-            const messageText = colonIdx > 0 ? text.slice(colonIdx + 2) : text;
+            // Plaintext: [timestamp: 4 LE][txt_type+attempt: 1][message]
+            // txt_type is upper 6 bits of byte 4:
+            //   0x00 = plain text  → message starts at byte 5
+            //   0x02 = signed      → bytes 5-8 are sender pubkey prefix (4 bytes), message at byte 9
+            const txtTypeByte = plaintext[4];
+            const txtType = (txtTypeByte >> 2) & 0x3F;
 
-            logger.info(`[meshcore] [${channelName}] id=${contentHash} hops=${hopCount} observer=${payload.origin} observer_id=${payload.origin_id.toLowerCase()} from=${sender}: ${messageText}`);
+            let senderPubkeyHex: string | null = null;
+            let rawText: string;
+
+            if (txtType === 0x02) {
+              senderPubkeyHex = plaintext.slice(5, 9).toString('hex');
+              rawText = plaintext.slice(9).toString('utf8').split('\0')[0];
+            } else {
+              rawText = plaintext.slice(5).toString('utf8').split('\0')[0];
+            }
+
+            const colonIdx = rawText.indexOf(': ');
+            const sender = colonIdx > 0 ? rawText.slice(0, colonIdx) : payload.origin;
+            const messageText = colonIdx > 0 ? rawText.slice(colonIdx + 2) : rawText;
+
+            logger.info(`[meshcore] [${channelName}] id=${contentHash} hops=${hopCount} observer=${payload.origin} observer_id=${payload.origin_id.toLowerCase()} sender_pubkey=${senderPubkeyHex ?? 'none'} from=${sender}: ${messageText}`);
 
             const packetId = parseInt(contentHash.slice(0, 8), 16);
-            const fromId = senderHashHex
-              ? parseInt(senderHashHex, 16)
-              : parseInt(payload.origin_id.slice(0, 8), 16);
+            const fromId = senderPubkeyHex
+              ? parseInt(senderPubkeyHex, 16)
+              : senderHashHex
+                ? parseInt(senderHashHex, 16)
+                : parseInt(payload.origin_id.slice(0, 8), 16);
 
             const envelope: MeshServiceEnvelope = {
               packet: {
