@@ -180,37 +180,6 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
 
             logger.info(`[meshcore] [${channelName}] id=${contentHash} hops=${hopCount} observer=${payload.origin} observer_id=${payload.origin_id.toLowerCase()} from=${sender}: ${messageText}`);
 
-            const originId = payload.origin_id.toLowerCase();
-            const nodeExists = await meshDB.client.node.findFirst({
-              where: { hexId: originId }
-            });
-            if (!nodeExists) {
-              await meshDB.client.node.create({
-                data: {
-                  hexId: originId,
-                  longName: payload.origin ?? null,
-                  platform: 'meshcore',
-                }
-              });
-              logger.info(`[meshcore] stored observer node from packet: ${originId} (${payload.origin ?? 'unnamed'})`);
-            }
-
-            if (senderHashHex) {
-              const senderExists = await meshDB.client.node.findFirst({
-                where: { hexId: senderHashHex }
-              });
-              if (!senderExists) {
-                await meshDB.client.node.create({
-                  data: {
-                    hexId: senderHashHex,
-                    longName: sender,
-                    platform: 'meshcore',
-                  }
-                });
-                logger.info(`[meshcore] stored sender node from packet path: ${senderHashHex} (${sender})`);
-              }
-            }
-
             const packetId = parseInt(contentHash.slice(0, 8), 16);
             const fromId = senderHashHex
               ? parseInt(senderHashHex, 16)
