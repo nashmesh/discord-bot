@@ -119,11 +119,28 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
         if (payload.type === "PACKET" && (payload.packet_type === "3" || payload.packet_type === "5")) {
           const rawBytes = Buffer.from(payload.raw, 'hex');
 
-          // Parse path length byte: bits 6-7 = hash size code (size = code+1), bits 0-5 = hop count
-          let offset = 1;
+          // Parse header: bits 0-1 = route type, bits 2-5 = payload type, bits 6-7 = payload version
+          let offset = 0;
+          const headerByte = rawBytes[offset++];
+          const routeType = headerByte & 0x03;
+
+          // ROUTE_TYPE_TRANSPORT_FLOOD (0x00) and ROUTE_TYPE_TRANSPORT_DIRECT (0x03) include
+          // 4 bytes of transport codes between the header and path_length
+          if (routeType === 0x00 || routeType === 0x03) {
+            offset += 4;
+          }
+
+          // Parse path_length: bits 6-7 = hash size code (size = code+1, max 3), bits 0-5 = hop count
           const pathLenByte = rawBytes[offset++];
-          const hashSize = (pathLenByte >> 6) + 1;
+          const hashSize = Math.min((pathLenByte >> 6) + 1, 3);
           const hopCount = pathLenByte & 0x3F;
+
+          // First path entry is the sender's truncated hash (if path is non-empty)
+          const pathStart = offset;
+          const senderHashHex = hopCount > 0
+            ? rawBytes.slice(pathStart, pathStart + hashSize).toString('hex')
+            : null;
+
           offset += hopCount * hashSize;
 
           // Content hash: SHA256(header + payload), path-independent — same across all observers
@@ -171,17 +188,33 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
               await meshDB.client.node.create({
                 data: {
                   hexId: originId,
-                  longName: sender,
+                  longName: payload.origin ?? null,
                   platform: 'meshcore',
                 }
               });
-              logger.info(`[meshcore] stored new node from packet: ${originId} (${sender})`);
+              logger.info(`[meshcore] stored observer node from packet: ${originId} (${payload.origin ?? 'unnamed'})`);
+            }
+
+            if (senderHashHex) {
+              const senderExists = await meshDB.client.node.findFirst({
+                where: { hexId: senderHashHex }
+              });
+              if (!senderExists) {
+                await meshDB.client.node.create({
+                  data: {
+                    hexId: senderHashHex,
+                    longName: sender,
+                    platform: 'meshcore',
+                  }
+                });
+                logger.info(`[meshcore] stored sender node from packet path: ${senderHashHex} (${sender})`);
+              }
             }
 
             const packetId = parseInt(contentHash.slice(0, 8), 16);
-            const fromId = parseInt(payload.origin_id, 16);
-
-            logger.info(payload.origin_id);
+            const fromId = senderHashHex
+              ? parseInt(senderHashHex, 16)
+              : parseInt(payload.origin_id.slice(0, 8), 16);
 
             const envelope: MeshServiceEnvelope = {
               packet: {
@@ -217,6 +250,69 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
 
           if (!decrypted) {
             logger.info(`[meshcore] no key matched channel 0x${channelHashHex} id=${contentHash} (origin=${payload.origin})`);
+          }
+        } else if (payload.type === "PACKET" && payload.packet_type === "4") {
+          const rawBytes = Buffer.from(payload.raw, 'hex');
+
+          // Parse header and skip transport codes if present
+          let offset = 0;
+          const headerByte = rawBytes[offset++];
+          const routeType = headerByte & 0x03;
+          if (routeType === 0x00 || routeType === 0x03) {
+            offset += 4;
+          }
+
+          // Skip path
+          const pathLenByte = rawBytes[offset++];
+          const hashSize = Math.min((pathLenByte >> 6) + 1, 3);
+          const hopCount = pathLenByte & 0x3F;
+          offset += hopCount * hashSize;
+
+          // Advert payload: [public_key: 32][timestamp: 4][signature: 64][appdata: rest]
+          const advertPayload = rawBytes.slice(offset);
+
+          if (advertPayload.length < 100) {
+            logger.warn(`[meshcore] advert payload too short (${advertPayload.length} bytes), skipping`);
+          } else {
+            const publicKey = advertPayload.slice(0, 32).toString('hex').toLowerCase();
+            const timestamp = advertPayload.readUInt32LE(32);
+            // bytes 36–99 are the Ed25519 signature, skip
+            const appdata = advertPayload.slice(100);
+
+            let nodeName: string | null = null;
+            let latitude: number | null = null;
+            let longitude: number | null = null;
+
+            if (appdata.length > 0) {
+              const flags = appdata[0];
+              let appdataOffset = 1;
+
+              if (flags & 0x10) { // has location
+                if (appdata.length >= appdataOffset + 8) {
+                  latitude = appdata.readInt32LE(appdataOffset) / 1_000_000;
+                  appdataOffset += 4;
+                  longitude = appdata.readInt32LE(appdataOffset) / 1_000_000;
+                  appdataOffset += 4;
+                }
+              }
+              if (flags & 0x20) appdataOffset += 2; // feature1 (reserved)
+              if (flags & 0x40) appdataOffset += 2; // feature2 (reserved)
+              if (flags & 0x80) { // has name
+                nodeName = appdata.slice(appdataOffset).toString('utf8').replace(/\0/g, '').trim() || null;
+              }
+            }
+
+            logger.info(`[meshcore] advert public_key=${publicKey} name=${nodeName} lat=${latitude} lon=${longitude} ts=${timestamp} hops=${hopCount} observer=${payload.origin_id?.toLowerCase()}`);
+
+            await meshDB.client.node.upsert({
+              where: { hexId: publicKey },
+              update: { longName: nodeName },
+              create: {
+                hexId: publicKey,
+                longName: nodeName,
+                platform: 'meshcore',
+              },
+            });
           }
         } else if (topic.endsWith('/status') && payload.origin_id) {
           const originId = payload.origin_id.toLowerCase();
