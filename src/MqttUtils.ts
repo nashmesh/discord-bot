@@ -65,7 +65,8 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
           if (!exists) {
             await meshDB.client.node.create({
               data: {
-                hexId: from
+                hexId: from,
+                platform: 'meshtastic',
               }
             });
           }
@@ -162,8 +163,25 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
 
             logger.info(`[meshcore] [${channelName}] id=${contentHash} hops=${hopCount} observer=${payload.origin} observer_id=${payload.origin_id.toLowerCase()} from=${sender}: ${messageText}`);
 
+            const originId = payload.origin_id.toLowerCase();
+            const nodeExists = await meshDB.client.node.findFirst({
+              where: { hexId: originId }
+            });
+            if (!nodeExists) {
+              await meshDB.client.node.create({
+                data: {
+                  hexId: originId,
+                  longName: sender,
+                  platform: 'meshcore',
+                }
+              });
+              logger.info(`[meshcore] stored new node from packet: ${originId} (${sender})`);
+            }
+
             const packetId = parseInt(contentHash.slice(0, 8), 16);
-            const fromId = parseInt(payload.origin_id.slice(0, 8), 16);
+            const fromId = parseInt(payload.origin_id, 16);
+
+            logger.info(payload.origin_id);
 
             const envelope: MeshServiceEnvelope = {
               packet: {
@@ -199,6 +217,22 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
 
           if (!decrypted) {
             logger.info(`[meshcore] no key matched channel 0x${channelHashHex} id=${contentHash} (origin=${payload.origin})`);
+          }
+        } else if (topic.endsWith('/status') && payload.origin_id) {
+          const originId = payload.origin_id.toLowerCase();
+          const exists = await meshDB.client.node.findFirst({
+            where: { hexId: originId }
+          });
+
+          if (!exists) {
+            await meshDB.client.node.create({
+              data: {
+                hexId: originId,
+                longName: payload.origin ?? null,
+                platform: 'meshcore',
+              }
+            });
+            logger.info(`[meshcore] stored new node from status: ${originId} (${payload.origin ?? 'unnamed'})`);
           }
         }
       } catch (e) {
