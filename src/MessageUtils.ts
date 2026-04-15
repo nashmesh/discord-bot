@@ -3,9 +3,10 @@ import { createDiscordMessage } from "./DiscordMessageUtils";
 import meshRedis from "./MeshRedis";
 import logger from "./Logger";
 import { PacketGroup } from "./MeshPacketCache";
-import { Client, Guild, EmbedBuilder } from "discord.js";
+import { Client, Guild, EmbedBuilder, GuildMember, User as DiscordUser, userMention } from "discord.js";
 import config from "Config";
 import { fetchDiscordChannel } from "DiscordUtils";
+import meshDB from "MeshDB";
 
 const processTextMessage = async (packetGroup: PacketGroup, client: Client, guild: Guild, discordMessageIdCache) => {
   const platform = packetGroup.serviceEnvelopes[0].platform;
@@ -137,6 +138,29 @@ const processMeshcoreMessage = async (packetGroup: PacketGroup, client: Client, 
     return;
   }
 
+  // Look up sender node by longName to find a linked Discord user
+  let ownerField: { name: string; value: string; inline: boolean } | null = null;
+  let avatarUrl: string | null = null;
+
+  const senderNode = await meshDB.client.node.findFirst({
+    where: { longName: sender, platform: 'meshcore' },
+  });
+
+  if (senderNode?.discordId) {
+    try {
+      let guildMember: GuildMember | DiscordUser;
+      try {
+        guildMember = await guild.members.fetch(senderNode.discordId);
+      } catch {
+        guildMember = await client.users.fetch(senderNode.discordId);
+      }
+      avatarUrl = guildMember.displayAvatarURL();
+      ownerField = { name: 'Owner', value: userMention(guildMember.id), inline: false };
+    } catch (e) {
+      logger.error(`[meshcore] failed to fetch discord user ${senderNode.discordId}: ${e}`);
+    }
+  }
+
   const uniqueObservers = packetGroup.serviceEnvelopes.filter(
     (se, i, self) => self.findIndex(s => s.gatewayId === se.gatewayId) === i
   );
@@ -152,10 +176,19 @@ const processMeshcoreMessage = async (packetGroup: PacketGroup, client: Client, 
     inline: false,
   }] : [];
 
+  const authorOptions: { name: string; url: string; iconURL?: string } = {
+    name: sender,
+    url: `https://analyzer.nashme.sh/#/nodes/${envelope.gatewayId}`,
+  };
+  if (avatarUrl) {
+    authorOptions.iconURL = avatarUrl;
+  }
+
   const embed = new EmbedBuilder()
-    .setAuthor({ name: sender, url: `https://analyzer.nashme.sh/#/nodes/${envelope.gatewayId}` })
+    .setAuthor(authorOptions)
     .setDescription(messageText)
     .addFields(
+      ...(ownerField ? [ownerField] : []),
       { name: 'Packet', value: `[${envelope.contentHash.slice(0, 8)}](https://analyzer.nashme.sh/#/packets/${envelope.contentHash})`, inline: true },
       { name: 'Observer Count', value: `${uniqueObservers.length}`, inline: true },
       ...observerFields,
