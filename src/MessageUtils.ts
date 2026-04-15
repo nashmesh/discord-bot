@@ -141,24 +141,16 @@ const processMeshcoreMessage = async (packetGroup: PacketGroup, client: Client, 
     (se, i, self) => self.findIndex(s => s.gatewayId === se.gatewayId) === i
   );
 
-  // Group observers by hop count (hopStart = hops traveled, hopLimit = 0)
-  const hopGroups: Record<number, string[]> = {};
-  for (const se of uniqueObservers) {
-    const hops = se.packet.hopStart;
+  const observerLines = uniqueObservers.map(se => {
     const shortId = se.gatewayId.slice(0, 4).toLowerCase();
-    const label = `[${shortId}](https://analyzer.nashme.sh/#/nodes/${se.gatewayId}) (${se.packet.rxSnr} / ${se.packet.rxRssi} dBm)`;
-    if (!hopGroups[hops]) hopGroups[hops] = [];
-    hopGroups[hops].push(label);
-  }
+    return `[${shortId}](https://analyzer.nashme.sh/#/nodes/${se.gatewayId}) (${se.packet.rxSnr} / ${se.packet.rxRssi} dBm)`;
+  });
 
-  const observerFields = Object.keys(hopGroups)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .map(hops => ({
-      name: hops === 0 ? 'Direct' : `${hops} hop${hops > 1 ? 's' : ''}`,
-      value: hopGroups[hops].join('\n'),
-      inline: false,
-    }));
+  const observerFields = observerLines.length > 0 ? [{
+    name: 'Observers',
+    value: observerLines.join('\n'),
+    inline: false,
+  }] : [];
 
   const embed = new EmbedBuilder()
     .setAuthor({ name: sender, url: `https://analyzer.nashme.sh/#/nodes/${envelope.gatewayId}` })
