@@ -316,7 +316,15 @@ client.once("ready", () => {
       if (err) {
         logger.error(`Error subscribing to MQTT topic: ${err}`);
       } else {
-        logger.info("Subscribed to MQTT topic");
+        logger.info("Subscribed to MQTT topic msh/US/#");
+      }
+    });
+
+    mqttClient.subscribe("meshcore/#", (err) => {
+      if (err) {
+        logger.error(`Error subscribing to MQTT topic: ${err}`);
+      } else {
+        logger.info("Subscribed to MQTT topic meshcore/#");
       }
     });
   });

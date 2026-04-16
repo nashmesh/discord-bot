@@ -25,6 +25,8 @@ export interface MeshPacket {
   decoded: Data;
 }
 
+export type MeshPlatform = 'meshtastic' | 'meshcore';
+
 /**
  * Interface representing the structure of a service envelope.
  */
@@ -35,6 +37,8 @@ export interface ServiceEnvelope {
   gatewayId: string;
   topic: string;
   mqttServer: string;
+  platform: MeshPlatform;
+  contentHash?: string;
 }
 
 /**

@@ -19,6 +19,7 @@ model Node {
   nodeInfo  NodeInfo?
   discordId String?
   flags     Flag[]
+  platform  String  @default("meshtastic")
 }
 
 model Flag {

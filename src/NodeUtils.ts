@@ -18,6 +18,11 @@ const validateNodeId = (nodeId: string): string | null => {
     return null;
   }
 
+  // MeshCore node: 64-char hex origin_id
+  if (/^[0-9a-fA-F]{64}$/.test(nodeId)) {
+    return nodeId.toLowerCase();
+  }
+
   const hexRegex = /^[0-9a-fA-F]{8}/;
   if (!hexRegex.test(nodeId)) {
     if (nodeId.length <= 8) {

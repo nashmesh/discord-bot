@@ -46,6 +46,8 @@ export default class LinkNodeCommand extends Command {
             throw new NodeError({name: 'NODE_IS_ALREADY_LINKED'});
         }
 
+        const isMeshcore = nodeId.length === 64;
+
         await meshDB.client.node.upsert({
             update: {
                 discordId: {
@@ -54,42 +56,55 @@ export default class LinkNodeCommand extends Command {
             },
             create: {
                 discordId: interaction.user.id,
-                hexId: nodeId
+                hexId: nodeId,
+                platform: isMeshcore ? 'meshcore' : 'meshtastic',
             },
             where: {
                 hexId: nodeId
             }
         }).then((node: Node) => {
+            const fields = isMeshcore ? [
+                {
+                    name: "Analyzer",
+                    value: `Check out your node on the [NashMe.sh Analyzer](https://analyzer.nashme.sh/#/nodes/${node.hexId}).`,
+                    inline: true
+                },
+                {
+                    name: "Flags",
+                    value: 'Check out `/help flags` to set flags for your node.',
+                    inline: true
+                },
+            ] : [
+                {
+                    name: "Malla",
+                    value: `Check out metrics and more for your node on our [Malla](https://malla.nashme.sh/node/${nodeHex2id(node.hexId)}).`,
+                    inline: true
+                },
+                {
+                    name: "Potato",
+                    value: `Check to see if your node has been seen on our [Potato map](https://potato.nashme.sh/nodes/!${node.hexId}).`,
+                    inline: true
+                },
+                {
+                    name: "Flags",
+                    value: 'Check out `/help flags` to set flags for your node.',
+                    inline: true
+                },
+            ];
+
             const embed = new EmbedBuilder()
                 .setTitle(`${node.longName ?? node.hexId} has been successfully linked!`)
-                    .setAuthor({
-                        name: interaction.user.displayName,
-                        iconURL: interaction.user.avatarURL() ?? '',
-                    })
-                .addFields(
-                    {
-                        name: "Malla",
-                        value: `Check out metrics and more for your node on our [Malla](https://malla.nashme.sh/node/${nodeHex2id(node.hexId)}).`,
-                        inline: true
-                    },
-                    {
-                        name: "Potato",
-                        value: `Check to see if your node has been seen on our [Potato map](https://potato.nashme.sh/nodes/!${node.hexId}).`,
-                        inline: true
-                    },
-                    {
-                        name: "Flags",
-                        value: 'Check out `/help flags` to set flags for your node.',
-                        inline: true
-                    },
-                )
+                .setAuthor({
+                    name: interaction.user.displayName,
+                    iconURL: interaction.user.avatarURL() ?? '',
+                })
+                .addFields(...fields)
                 .setColor("#fefdf5")
                 .setFooter({
                     text: "NashMesh",
                     iconURL: "https://nashme.sh/static/images/logo.png",
                 })
                 .setTimestamp();
-
 
             interaction.reply({
                 embeds: [embed],
