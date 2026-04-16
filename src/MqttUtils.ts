@@ -173,6 +173,11 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
             const plaintext = Buffer.concat([cipher.update(ciphertext), cipher.final()]);
 
             // Plaintext: [timestamp: 4 LE][txt_type+attempt: 1][message]
+            // Use the plaintext's 4-byte LE Unix timestamp as the authoritative send time.
+            // This avoids timezone ambiguity in payload.timestamp (some nodes report local time
+            // without a UTC offset, causing ~5-hour skew for CDT nodes).
+            const plaintextTimestamp = plaintext.readUInt32LE(0);
+
             // txt_type is upper 6 bits of byte 4:
             //   0x00 = plain text  → message starts at byte 5
             //   0x02 = signed      → bytes 5-8 are sender pubkey prefix (4 bytes), message at byte 9
@@ -209,7 +214,7 @@ const handleMqttMessage = async (topic, message, meshPacketCache, NODE_INFO_UPDA
                 channel: 0,
                 encrypted: Buffer.alloc(0),
                 id: packetId,
-                rxTime: Math.floor(new Date(payload.timestamp).getTime() / 1000),
+                rxTime: plaintextTimestamp,
                 rxSnr: parseFloat(payload.SNR ?? '0'),
                 hopLimit: 0,
                 hopStart: hopCount,
