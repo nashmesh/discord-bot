@@ -165,9 +165,13 @@ const processMeshcoreMessage = async (packetGroup: PacketGroup, client: Client, 
     (se, i, self) => self.findIndex(s => s.gatewayId === se.gatewayId) === i
   );
 
-  const observerLines = uniqueObservers.map(se => {
-    const shortId = se.gatewayId.slice(0, 4).toLowerCase();
-    return `[${shortId}](https://analyzer.nashme.sh/#/nodes/${se.gatewayId}) (${se.packet.rxSnr} / ${se.packet.rxRssi} dBm)`;
+  const observerNodes = await Promise.all(
+    uniqueObservers.map(se => meshDB.client.node.findFirst({ where: { hexId: se.gatewayId } }))
+  );
+
+  const observerLines = uniqueObservers.map((se, i) => {
+    const displayName = observerNodes[i]?.longName ?? se.gatewayId.slice(0, 4).toLowerCase();
+    return `[${displayName}](https://analyzer.nashme.sh/#/nodes/${se.gatewayId}) (${se.packet.rxSnr} / ${se.packet.rxRssi} dBm)`;
   });
 
   const observerFields = observerLines.length > 0 ? [{
